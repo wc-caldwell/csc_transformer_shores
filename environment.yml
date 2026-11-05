@@ -1,0 +1,24 @@
+name: train
+channels:
+- conda-forge
+- nodefaults
+dependencies:
+- python 3.12.*
+- pandas 
+- transformers 
+- scikit-image 
+- gdal 
+- matplotlib 
+- geopandas 
+- pip 
+- ipykernel 
+- jupyter 
+- pip
+- pip:
+  - scikit-learn
+  - torch
+  - torchvision
+  - albumentations
+  - pyproj
+  - rasterio
+  - astropy
