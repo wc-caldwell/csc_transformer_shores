@@ -4,3 +4,5 @@
 pixi*
 
 *.pt
+
+*.DS_Store

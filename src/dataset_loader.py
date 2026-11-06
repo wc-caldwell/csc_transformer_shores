@@ -5,10 +5,6 @@ from torch.utils.data import Dataset
 import albumentations as A
 from transformers import SegformerImageProcessor
 import matplotlib.pyplot as plt
-import rasterio
-from pathlib import Path
-from skimage import exposure, img_as_ubyte
-from skimage.io import imsave
 
 SENSOR_SPEC = {
     "S2": dict(rgb=(3,2,1), nodata = None),
@@ -28,71 +24,58 @@ def build_processor():
     )
 
 def build_train_aug():
-    """Augmentations matching the JSON config (small rot / zoom / shift + flips).
-    No 90-degree rotations: coastlines have a natural land/sea orientation."""
     return A.Compose([
-        # A.Rotate(limit=5, p=0.5, border_mode=0, value=0, mask_value=255),
-        A.Rotate(limit=5, p=0.5, border_mode=0),                 # AUG_ROT 5
-        # A.Affine(scale=(0.95, 1.05), translate_percent=(0.0, 0.05),
-        #          rotate=(-5, 5), p=0.5, cval=0, cval_mask=255, mode=0),
+        A.Rotate(angle_range=(-5, 5), p=0.5, border_mode=0, fill=0, fill_mask=255),
         A.Affine(scale=(0.95, 1.05), translate_percent=(0.0, 0.05),
-                 rotate=(-5, 5), p=0.5),
-        A.HorizontalFlip(p=0.5),                                 # AUG_HFLIP
-        A.VerticalFlip(p=0.5),                                   # AUG_VFLIP
-        A.RandomBrightnessContrast(brightness_limit=0.1,
-                                   contrast_limit=0.2, p=0.5),
+                 rotate=(-5, 5), p=0.5, border_mode=0, fill=0, fill_mask=0),
+        A.HorizontalFlip(p=0.5),                                
+        A.VerticalFlip(p=0.5),                                  
+        A.RandomBrightnessContrast(brightness_range=(-0.1, 0.1), contrast_range=(-0.2, 0.2), p=0.5),
     ])
 
-def visualize_sample(config, dataset, idx=0):
+def visualize_sample(config, dataset, idx=0, show_augmented=True):
     """Visualize a sample from the dataset."""
-    sample = dataset[idx]
     
     # Load original image for display
-    image = Image.open(dataset.image_paths[idx]).convert("RGB")
-    label = Image.open(dataset.label_paths[idx]).convert("L")
+    image_np = np.ascontiguousarray(np.array(Image.open(dataset.image_paths[idx]).convert("RGB")))
+    label_np = np.ascontiguousarray(np.array(Image.open(dataset.label_paths[idx]).convert("L")))
+
+    rows = [("Original", image_np, label_np)]
+    aug = dataset.aug
+
+    if show_augmented:
+        out = aug(image=image_np, mask=label_np)
+        rows.append(("Augmented", out["image"], out["mask"]))
     
-    # Create colored label visualization
-    label_np = np.array(label)
-    label_colored = np.zeros((*label_np.shape, 3), dtype=np.uint8)
-    for c, color in enumerate(config.CLASS_COLORS):
-        label_colored[label_np == c] = color
-    
-    fig, axes = plt.subplots(1, 2, figsize=(15, 5))
-    
-    axes[0].imshow(image)
-    axes[0].set_title("Input Image")
-    axes[0].axis("off")
-    
-    axes[1].imshow(label_colored)
-    axes[1].set_title("Label (Colored)")
-    axes[1].axis("off")
-    
-    # Add legend
+    fig, axes = plt.subplots(len(rows), 2, figsize=(15, 5 * len(rows)), squeeze=False)
+    for r, (name, img, lbl) in enumerate(rows):
+        # Create colored label visualization
+        label_colored = np.zeros((*lbl.shape, 3), dtype=np.uint8)
+        for c, color in enumerate(config.CLASS_COLORS):
+            label_colored[lbl == c] = color
+            
+        axes[r, 0].imshow(img)
+        axes[r, 0].set_title(f"{name} image")
+        axes[r, 1].imshow(label_colored)
+        axes[r, 1].set_title(f"{name} label")
+        for ax in axes[r]:
+            ax.axis("off")
+
     legend_elements = [
-        plt.Rectangle((0,0),1,1, facecolor=np.array(c)/255, label=n)
+        plt.Rectangle((0, 0), 1, 1, facecolor=np.array(c) / 255, label=n)
         for n, c in zip(config.CLASS_NAMES, config.CLASS_COLORS)
     ]
-    axes[1].legend(handles=legend_elements, loc='upper right', fontsize=8)
-    
+    axes[0, 1].legend(handles=legend_elements, loc="upper right", fontsize=8)
     plt.tight_layout()
     plt.show()
-    
-    # Show whitewater pixels specifically
-    whitewater_mask = label_np == 1
-    sediment_mask = label_np == 2
-    print(f"Whitewater pixels in this image: {whitewater_mask.sum():,} ({whitewater_mask.mean()*100:.2f}%)\nSediment pixels in this image: {sediment_mask.sum():,} ({sediment_mask.mean()*100:.2f}%)")
 
+    whitewater = label_np == 1
+    sediment = label_np == 2
+    print(f"Whitewater pixels: {whitewater.sum():,} ({whitewater.mean()*100:.2f}%)\n"
+          f"Sediment pixels:   {sediment.sum():,} ({sediment.mean()*100:.2f}%)")
 
 class CoastalSegDataset(Dataset):
-    def __init__(
-            self, 
-            image_paths, 
-            label_paths, 
-            num_classes=4,
-            tile_size=512, 
-            processor=None, 
-            augment=False
-            ):
+    def __init__(self, image_paths, label_paths, num_classes=4,tile_size=512, processor=None, augment=False):
         assert len(image_paths) == len(label_paths), "image/label count mismatch"
         self.image_paths = image_paths
         self.label_paths = label_paths
@@ -130,48 +113,6 @@ class CoastalSegDataset(Dataset):
         labels = torch.from_numpy(np.ascontiguousarray(label_np)).long()  # full-res
 
         return {"pixel_values": pixel_values, "labels": labels}
-
-def rescale_image_intensity(arr, mask, prob_hi=99.9):
-    """Reimplimentation of CoastSat's scaling for TOA reflectance"""
-    out = np.zeros(arr.shape, dtype=np.float64)
-    for i in range(arr.shape[0]):
-        v = arr[i][mask]
-        if v.size == 0:
-            continue
-        prc_hi = np.percentile(v, prob_hi)
-        if prc_hi <= 0:
-            continue
-        out[i][mask] = exposure.rescale_intensity(arr[i][mask], in_range = (0., float(prc_hi)))
-    out[:, ~mask] = 0.
-    return out
-
-def geotiff_to_rgb(src_path, dst_path, satname, prob_hi=99.9, extra_mask=None, as_png=True):
-    """Convert projected geotiff to 8-bit png or jpeg"""
-    spec = SENSOR_SPEC[satname]
-    with rasterio.open(src_path) as src:
-        arr = src.read(list(spec['rgb'])).astype(np.float64)
-        file_nodata = src.nodatavals
-
-    valid = np.all(np.isfinite(arr), axis=0)
-    for i,b in enumerate(spec['rgb']):
-        nd = file_nodata[b-1] if file_nodata[b-1] is not None else spec['nodata']
-        if nd is not None:
-            valid &= (arr[i] != nd)
-
-    if extra_mask is not None:
-        valid &= ~extra_mask
-
-    rgb = rescale_image_intensity(arr, valid, prob_hi)
-    rgb8 = img_as_ubyte(np.clip(rgb, 0, 1).transpose(1,2,0))
-
-    dst = Path(dst_path).with_suffix(".png" if as_png else ".jpg")
-    imsave(dst, rgb8, **({} if as_png else {"quality": 100}))
-    return dst, valid
-
-def batch_convert(src_dir, dst_dir, satname, pattern="*.tif", as_png=True):
-    src_dir, dst_dir = Path(src_dir), Path(dst_dir)
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    return [geotiff_to_rgb(p, dst_dir / p.stem, satname, as_png=as_png)[0] for p in sorted(src_dir.glob(pattern))]
 
 def analyze_class_distribution(config, label_paths, sample: bool = False, 
                                num_samples=None, plot: bool = True):
@@ -219,66 +160,3 @@ def analyze_class_distribution(config, label_paths, sample: bool = False,
         plt.show()
 
     return class_counts, weights
-
-def geotiff_label_to_jpeg(
-    src_path: str | Path,
-    dst_path: str | Path,
-    band: int = 1,
-    nodata_value: int | None = None,
-    ignore_index: int = 255,
-    quality: int = 100,
-) -> None:
-    """Convert a single-band label GeoTIFF to JPEG, matching existing dataset convention."""
-    with rasterio.open(src_path) as src:
-        label = src.read(band)
-        src_nodata = src.nodatavals[band - 1]
-
-    nodata = nodata_value if nodata_value is not None else src_nodata
-    if nodata is not None:
-        label = np.where(label == nodata, ignore_index, label)
-
-    label = label.astype(np.uint8)
-    Image.fromarray(label, mode="L").save(dst_path, quality=quality)
-
-def geotiff_label_to_png(
-    src_path: str | Path,
-    dst_path: str | Path,
-    band: int = 1,
-    nodata_value: int | None = None,
-    ignore_index: int = 255,
-    nclasses: int | None = None,
-) -> None:
-    """Convert a single-band label GeoTIFF to lossless PNG."""
-    with rasterio.open(src_path) as src:
-        label = src.read(band)
-        src_nodata = src.nodatavals[band - 1]
-
-    nodata = nodata_value if nodata_value is not None else src_nodata
-    if nodata is not None:
-        label = np.where(label == nodata, ignore_index, label)
-
-    assert label.min() >= 0 and label.max() <= 255, f"{src_path}: {label.min()}..{label.max()}"
-    label = label.astype(np.uint8)
-
-    u = np.unique(label)
-    off = u[(u >= 4) & (u != ignore_index)]
-    assert off.size == 0, f"{src_path}: unexpected labels {off}"
-
-    Image.fromarray(label, mode="L").save(dst_path, optimize=True)
-
-def batch_convert_labels(
-    src_dir: str | Path,
-    dst_dir: str | Path,
-    pattern: str = "*.tif",
-    nodata_value: int | None = None,
-    ignore_index: int = 255,
-    quality: int = 100,
-) -> list[Path]:
-    src_dir, dst_dir = Path(src_dir), Path(dst_dir)
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    out_paths = []
-    for src_path in sorted(src_dir.glob(pattern)):
-        dst_path = dst_dir / (src_path.stem + ".png")
-        geotiff_label_to_jpeg(src_path, dst_path, nodata_value=nodata_value, ignore_index=ignore_index, quality=quality)
-        out_paths.append(dst_path)
-    return out_paths

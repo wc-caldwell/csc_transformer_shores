@@ -1,14 +1,9 @@
-import os
-import sys
-from pathlib import Path
 import torch
 import torch.nn.functional as F
 import numpy as np
 from torch.utils.data import DataLoader
 
-# sys.path.insert(0, os.path.abspath('..'))
-# from breakseg
-from src import dataset_loader, inference_help
+from src import inference_help
 
 class ConfusionMeter:
     """Accumulates a pixel-level confusion matrix across batches.

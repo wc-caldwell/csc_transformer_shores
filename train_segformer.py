@@ -188,7 +188,7 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 # run training loop
 results, history, test_metrics = training_help.train(model, train_loader, val_loader, test_loader, criterion, optimizer, scheduler, config, device=device)
-print(results)
+# print(results)
 
 # generate training history plot(s)
 training_help.training_history_plot(config, history)
