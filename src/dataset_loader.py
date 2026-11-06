@@ -96,11 +96,9 @@ class CoastalSegDataset(Dataset):
         image = image.resize((self.tile_size, self.tile_size), Image.BILINEAR)
         label = label.resize((self.tile_size, self.tile_size), Image.NEAREST)
 
-        image_np = np.array(image)                      # (H, W, 3) uint8
-        label_np = np.array(label).astype(np.int64)     # (H, W)
-        # label_np = np.clip(label_np, 0, self.num_classes - 1)
-        bad = (label_np < 0) | (label_np >= self.num_classes)
-        label_np[bad] = 255
+        image_np = np.array(image, dtype=np.uint8, order="C")   # (H, W, 3)
+        label_np = np.array(label, dtype=np.uint8, order="C")   # (H, W)
+        label_np[label_np >= self.num_classes] = 255             # out-of-range -> ignore
 
         # augment (image + mask together)
         if self.aug is not None:

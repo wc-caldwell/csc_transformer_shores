@@ -71,8 +71,8 @@ class ConfusionMeter:
 
     def mcc_per_class(self):
         tp = self.cm.diag()
-        fn = self.cm.sum(0) - tp
-        fp = self.cm.sum(1) - tp
+        fn = self.cm.sum(1) - tp
+        fp = self.cm.sum(0) - tp
         tn = self.cm.sum() - (tp + fp + fn)
         
         numerator = tp * tn - fp * fn
@@ -138,9 +138,12 @@ def evaluate(model, loader, criterion, config, device):
         imgs = batch["pixel_values"].to(device, non_blocking=True)
         masks = batch["labels"].to(device, non_blocking=True).long()
 
-        logits = model(pixel_values=imgs).logits                      # (B,4,128,128)
-        logits = F.interpolate(logits, size=masks.shape[-2:],
-                               mode="bilinear", align_corners=False).contiguous()  # (B,4,512,512)
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_bf16):
+            logits = model(pixel_values=imgs).logits
+            logits = F.interpolate(logits, size=masks.shape[-2:],
+                                    mode="bilinear", align_corners=False)
+
+        logits = logits.float()
 
         total_loss += criterion(logits, masks).item()
         n += 1
@@ -265,6 +268,8 @@ def train(model, train_loader, val_loader, test_loader,
     best_val_miou = -float("inf")
     wait = 0
 
+    use_bf16 = torch.device(device).type == "cuda"
+
     for epoch in range(config.MAX_EPOCHS):
         # train
         model.train()
@@ -273,12 +278,13 @@ def train(model, train_loader, val_loader, test_loader,
             imgs = batch["pixel_values"].to(device, non_blocking=True)
             masks = batch["labels"].to(device, non_blocking=True).long()
 
-            logits = model(pixel_values=imgs).logits
-            logits = F.interpolate(logits, size=masks.shape[-2:],
-                                   mode="bilinear", align_corners=False).contiguous()
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_bf16):
+                logits = model(pixel_values=imgs).logits
+                logits = F.interpolate(logits, size=masks.shape[-2:],
+                                       mode="bilinear", align_corners=False)
             loss = criterion(logits, masks)
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 

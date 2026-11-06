@@ -144,13 +144,13 @@ else:
                                  processor=processor, augment=False)
 
     train_loader = DataLoader(train_ds, batch_size=config.BATCH_SIZE, shuffle=True,
-                        num_workers=os.cpu_count() - 4, pin_memory=(device == 'cuda'))
+                        num_workers=20, pin_memory=(device == 'cuda'))
 
     test_loader = DataLoader(test_ds, batch_size=config.BATCH_SIZE, shuffle=False,
-                        num_workers=os.cpu_count() - 4, pin_memory=(device == 'cuda'))
+                        num_workers=20, pin_memory=(device == 'cuda'))
 
     val_loader = DataLoader(val_ds, batch_size=config.BATCH_SIZE, shuffle=False,
-                        num_workers=os.cpu_count() - 4, pin_memory=(device == 'cuda'))
+                        num_workers=20, pin_memory=(device == 'cuda'))
 
     torch.save(train_loader, args.data_dir / 'train_loader.pt')
     torch.save(test_loader, args.data_dir / 'test_loader.pt')
