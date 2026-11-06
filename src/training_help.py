@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from torch.utils.data import DataLoader
+from pathlib import Path
 
 from src import inference_help
 
@@ -130,8 +131,8 @@ class ConfusionMeter:
 @torch.no_grad()
 def evaluate(model, loader, criterion, config, device):
     model.eval()
-    # meter = IoUMeter(config.NUM_CLASSES)
     meter = ConfusionMeter(config.NUM_CLASSES)
+    use_bf16 = torch.device(device).type == "cuda"
     total_loss, n = 0.0, 0
 
     for batch in loader:
@@ -149,7 +150,7 @@ def evaluate(model, loader, criterion, config, device):
         n += 1
 
         preds = logits.argmax(dim=1)                                  # (B,512,512)
-        meter.update(preds.cpu(), masks.cpu())
+        meter.update(preds, masks)
 
     avg_loss = total_loss / max(n, 1)
     return avg_loss, meter.iou_per_class(), meter.mean_iou(), meter.freq_iou(), meter.accuracy(), meter.f1_per_class(), meter.mean_f1(), meter.mean_mcc(), meter.mcc_per_class(), meter.recall_per_class(), meter.mean_recall(), meter.precision_per_class(), meter.mean_precision()

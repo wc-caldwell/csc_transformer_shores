@@ -103,7 +103,8 @@ class CoastalSegDataset(Dataset):
         # augment (image + mask together)
         if self.aug is not None:
             out = self.aug(image=image_np, mask=label_np)
-            image_np, label_np = out["image"], out["mask"]
+            image_np = np.ascontiguousarray(out["image"])
+            label_np = np.ascontiguousarray(out["mask"])
 
         # processor: rescale + normalize -> (3, H, W)
         pixel_values = self.processor(images=image_np, return_tensors="pt")["pixel_values"].squeeze(0)
