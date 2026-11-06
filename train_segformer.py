@@ -34,15 +34,22 @@ from src.loss_functions import (
 
 import argparse
 
+# ==================================================================================================================================
+# ==================================================================================================================================
+# ==================================================================================================================================
+# CLI Arguments to execute this file
+
 def parse_args():
     p = argparse.ArgumentParser(description="SegFormer Fine-Tuning Loop")
-    p.add_argument("--seed", type=int, required = True, choices=["7", "42", "300", "1337", "12345"])
-    p.add_argument("--backbone", type=str, required = True, default="b0", choies=["b0", "b1", "b2", "b3", "b4", "b5"]
+    p.add_argument("--seed", type=str, required = True, choices=["7", "42", "300", "1337", "12345"])
+    p.add_argument("--backbone", type=str, required = True, default="b0", choices=["b0", "b1", "b2", "b3", "b4", "b5"])
     p.add_argument("--loss", type=str, required = True, choices=["CCE", "wCCE", "Focal", "Dice", "GenDice", "Combo", "Tversky", "FocalTversky", "AsymmetricUnifiedFocal", "LovaszSoftmax"])
-    p.add_argument("--images", type=Path, required = True, help="Path to the folder where the RGB images are stored")
-    p.add_argument("--labels", type=Path, required = True, help="Path to the folder where the labels corresponding to the RGB images are stored")
-    p.add_argument("--out-dir", type=Path, required = True, help="Path to the location where you would like the training outputs to be stored")
+    p.add_argument("--data-dir", type=Path, required=True, help="Folder where training data is stored. Images in images and Labels in labels subdirectories.")
     return p.parse_args()
+
+# ==================================================================================================================================
+# ==================================================================================================================================
+# ==================================================================================================================================
 
 if __name__ == "__main__":
     args = parse_args()
@@ -55,11 +62,12 @@ class Config:
         self.__dict__.update(kwargs)
 
 config = Config(**config_dict)
-config.SEED = args.seed        
+config.SEED = int(args.seed)        
 config.LOSS = args.loss
-config.IMAGES_DIR = args.images
-config.LABELS_DIR = args.labels
-config.OUTPUT_DIR = args.out_dir / "trained_models" / f'mit-{args.backbone}_{config.SEED}_{config.LOSS}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}'
+config.IMAGES_DIR = args.data_dir / "images"
+config.LABELS_DIR = args.data_dir / "labels"
+config.OUTPUT_DIR = args.data_dir / "trained_models" / f'mit-{args.backbone}_{config.SEED}_{config.LOSS}_{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}'
+os.makedirs(config.OUTPUT_DIR, exist_ok=True)
 
 LOSSES = {
     "CCE":     nn.CrossEntropyLoss(ignore_index=255),
@@ -83,10 +91,10 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(config.SEED)
 
 # load the data used for training, testing, and validation
-if (Path.cwd() / 'data' / 'train_loader.pt').exists():
-    train_loader = torch.load(Path.cwd() / 'data' / 'train_loader.pt', weights_only=False)
-    test_loader = torch.load(Path.cwd() / 'data' / 'test_loader.pt', weights_only=False)
-    val_loader = torch.load(Path.cwd() / 'data' / 'val_loader.pt', weights_only=False)
+if (args.data_dir / 'train_loader.pt').exists():
+    train_loader = torch.load(args.data_dir / 'train_loader.pt', weights_only=False)
+    test_loader = torch.load(args.data_dir / 'test_loader.pt', weights_only=False)
+    val_loader = torch.load(args.data_dir / 'val_loader.pt', weights_only=False)
 
 else:
     image_paths = sorted([
@@ -144,9 +152,9 @@ else:
     val_loader = DataLoader(val_ds, batch_size=config.BATCH_SIZE, shuffle=False,
                         num_workers=os.cpu_count() - 4, pin_memory=(device == 'cuda'))
 
-    torch.save(train_loader, Path.cwd() / 'data' / 'train_loader.pt')
-    torch.save(test_loader, Path.cwd() / 'data' / 'test_loader.pt')
-    torch.save(val_loader, Path.cwd() / 'data' / 'val_loader.pt')
+    torch.save(train_loader, args.data_dir / 'train_loader.pt')
+    torch.save(test_loader, args.data_dir / 'test_loader.pt')
+    torch.save(val_loader, args.data_dir / 'val_loader.pt')
 
     del X_train, y_train, X_test, X_val, y_test, y_val, train_ds, test_ds, val_ds, image_paths, label_paths, valid_pairs
 
@@ -190,10 +198,10 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 results, history, test_metrics = training_help.train(model, train_loader, val_loader, test_loader, criterion, optimizer, scheduler, config, device=device)
 # print(results)
 
-# generate training history plot(s)
+# # generate training history plot(s)
 training_help.training_history_plot(config, history)
 
-# save update config file, model history, and testing metrics for future use
+# # save update config file, model history, and testing metrics for future use
 config_dict = {k: v for k, v in vars(config.__class__).items() if k.isupper()}
 
 with open(config.OUTPUT_DIR / 'model_config.json', 'w') as config_file:
