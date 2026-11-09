@@ -52,7 +52,7 @@ def run_inference(seed, backbone, loss, data_dir):
     config.LOSS = loss
     config.IMAGES_DIR = data_dir / "images"
     config.LABELS_DIR = data_dir / "labels"
-    config.OUTPUT_DIR = sorted((data_dir / "trained_models").glob(f"mit-{backbone}_{seed}_{loss}*"))[0]
+    config.OUTPUT_DIR = sorted((data_dir / "trained_models").glob(f"mit-{backbone}_{seed}_{loss}_*"))[0]
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
 
     model = SegformerForSemanticSegmentation.from_pretrained(config.OUTPUT_DIR / 'best_hf').to(device).eval()
