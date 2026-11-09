@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # SET_GPU
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0" 
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import json
@@ -41,7 +41,7 @@ import argparse
 
 def parse_args():
     p = argparse.ArgumentParser(description="SegFormer Fine-Tuning Loop")
-    p.add_argument("--seed", type=str, required = True, choices=["7", "42", "300", "1337", "12345"])
+    p.add_argument("--seed", type=str, required = True, choices=["42", "43", "44", "45", "46"])
     p.add_argument("--backbone", type=str, required = True, default="b0", choices=["b0", "b1", "b2", "b3", "b4", "b5"])
     p.add_argument("--loss", type=str, required = True, choices=["CCE", "wCCE", "Focal", "Dice", "GenDice", "Combo", "Tversky", "FocalTversky", "AsymmetricUnifiedFocal", "LovaszSoftmax"])
     p.add_argument("--data-dir", type=Path, required=True, help="Folder where training data is stored. Images in images and Labels in labels subdirectories.")
@@ -196,12 +196,11 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 # run training loop
 results, history, test_metrics = training_help.train(model, train_loader, val_loader, test_loader, criterion, optimizer, scheduler, config, device=device)
-# print(results)
 
-# # generate training history plot(s)
+# generate training history plot(s)
 training_help.training_history_plot(config, history)
 
-# # save update config file, model history, and testing metrics for future use
+# save update config file, model history, and testing metrics for future use
 config_dict = {k: v for k, v in vars(config.__class__).items() if k.isupper()}
 
 with open(config.OUTPUT_DIR / 'model_config.json', 'w') as config_file:

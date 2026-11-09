@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from torch.utils.data import DataLoader
+from transformers import SegformerForSemanticSegmentation
 from pathlib import Path
 
 from src import inference_help
@@ -168,7 +169,7 @@ def train(model, train_loader, val_loader, test_loader,
           device, ckpt_path=None):
 
     if ckpt_path is None:
-        ckpt_path = str(config.OUTPUT_DIR / "best.pt")
+        ckpt_path = str(config.OUTPUT_DIR / "best_hf")
     config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     WATER, WHITEWATER, SEDIMENT, OTHER = 0, 1, 2, 3  # class indices
@@ -382,7 +383,8 @@ def train(model, train_loader, val_loader, test_loader,
         if val_miou > best_val_miou:
             best_val_miou = val_miou
             wait = 0
-            torch.save(model.state_dict(), ckpt_path)
+            # torch.save(model.state_dict(), ckpt_path)
+            model.save_pretrained(ckpt_path)
             print(f"  saved new best (val_mIoU={val_miou:.4f}) -> {ckpt_path}")
         else:
             wait += 1
@@ -394,7 +396,8 @@ def train(model, train_loader, val_loader, test_loader,
     # final test eval on best checkpoint 
     print("\n" + "=" * 60)
     print("Loading best checkpoint and evaluating on TEST set...")
-    model.load_state_dict(torch.load(ckpt_path, map_location=device))
+    # model.load_state_dict(torch.load(ckpt_path, map_location=device))
+    model = SegformerForSemanticSegmentation.from_pretrained(ckpt_path).to(device)
     test_loss, test_iou, test_miou, test_freq_iou, test_accuracy, test_f1_per_class, test_mean_f1, test_mean_mcc, test_mcc_per_class, test_recall_per_class, test_mean_recall, test_precision_per_class, test_mean_precision = evaluate(
         model, test_loader, criterion, config, device)
 
