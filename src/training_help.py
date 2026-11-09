@@ -284,10 +284,15 @@ def train(model, train_loader, val_loader, test_loader,
                 logits = model(pixel_values=imgs).logits
                 logits = F.interpolate(logits, size=masks.shape[-2:],
                                        mode="bilinear", align_corners=False)
+            logits.float()
             loss = criterion(logits, masks)
+            if not torch.isfinite(loss):
+                optimizer.zero_grad(set_to_none=True)
+                continue
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.)
             optimizer.step()
 
             train_loss += loss.item()
