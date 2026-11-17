@@ -175,7 +175,7 @@ class AsymmetricUnifiedFocalLoss(nn.Module):
     THOUGH, some of the code does not actually match the publication equations. I have tried to 
     match as best as possible here
     '''
-    def __init__(self, nclasses, rare_classes = [1,2], lam = 0.5, delta=0.6, gamma=0.5, eps=1e-8, ignore_index=255, smooth=1.):
+    def __init__(self, nclasses, rare_classes = [1,2], lam = 0.5, delta=0.6, gamma=0.5, eps=1e-6, ignore_index=255, smooth=1.):
         super().__init__()
         self.nclasses = nclasses
         self.lam = lam
