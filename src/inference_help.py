@@ -81,6 +81,7 @@ def _valid_mask(image, label=None):
         valid &= (label != 255)
     return valid
 
+# TODO: Try and confirm that this keeps IoU as NaN if the union == 0
 @torch.no_grad()
 def predict_and_visualize(config, model, dataset, idx, device, show_plot=True, whole_scene=True, save_prediction=False):
     """Visualize prediction for a single sample and report per-class IoU, Dice, and their means."""
